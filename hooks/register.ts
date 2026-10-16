@@ -2,6 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decisao, Esforco, Plano, StatusTarefa, Tarefa } from '../types'
+import { novoTurno } from './painel-dados'
+import { PAINEL_ID, registrarPainel } from './painel'
 import {
   INSTRUCAO_PLANEJADOR,
   bloquear,
@@ -50,6 +52,13 @@ const atual = atom({ plugin: 'orquestra', key: 'atual' } as const, null)
 const historico = atom({ plugin: 'orquestra', key: 'historico' } as const, [])
 const planoAuto = atom({ plugin: 'orquestra', key: 'planoAuto' } as const, true)
 const planoAtom = atom({ plugin: 'orquestra', key: 'plano' } as const, null)
+const turnosAtom = atom({ plugin: 'orquestra', key: 'turnos' } as const, [])
+const ferramentasAtom = atom({ plugin: 'orquestra', key: 'ferramentas' } as const, {})
+const arquivosAtom = atom({ plugin: 'orquestra', key: 'arquivos' } as const, [])
+const errosAtom = atom({ plugin: 'orquestra', key: 'erros' } as const, 0)
+const ultimoErroAtom = atom({ plugin: 'orquestra', key: 'ultimoErro' } as const, null)
+const trocasAtom = atom({ plugin: 'orquestra', key: 'trocasModelo' } as const, 0)
+const usoAtom = atom({ plugin: 'orquestra', key: 'usoSessao' } as const, null)
 
 const MARCA: Record<StatusTarefa, string> = {
   pendente: '○',
@@ -216,6 +225,28 @@ function enviarDepois($: Ctx, prompt: { text: string; asUser?: true }): void {
   })
 }
 
+// Foto do uso da sessão (contexto, custo, limites) para o painel. Uma leitura
+// por segundo no máximo, para não pesar a cada chamada de ferramenta.
+let ultimaLeitura = 0
+
+async function lerUso($: Ctx): Promise<void> {
+  try {
+    const agora = await $.clock.now()
+    if (agora - ultimaLeitura < 1000) return
+    ultimaLeitura = agora
+    const u = await $.session.usage()
+    await update($, usoAtom, () => ({
+      percent: u.context.percent ?? null,
+      tokens: u.context.tokens ?? null,
+      janela: u.context.window,
+      usd: u.cost?.usd ?? null,
+      limites: u.rateLimits.map(l => ({ tipo: l.kind, percent: l.percentUsed })),
+    }))
+  } catch {
+    // Sem leitura agora: o painel mostra o último valor.
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -232,6 +263,10 @@ export const register: Register = on => {
       name: 'aprovar',
       description: 'Aprova o plano e começa a executar',
       argumentHint: '[sem 2 3] [4=6]',
+    })
+    await $.command.register({
+      name: 'painel',
+      description: 'Abre o painel ao vivo da sessão: modelo, contexto, custo, turnos, plano, ferramentas e alertas',
     })
     await $.command.register({
       name: 'descartar',
@@ -352,6 +387,13 @@ export const register: Register = on => {
     return { text: `Plano aprovado. ${rodando} tarefa(s) em andamento; as outras entram conforme as dependências ficam prontas.` }
   })
 
+  registrarPainel(on)
+
+  on('command.run', { command: 'painel' }, async $ => {
+    const r = await $.ui.open({ id: PAINEL_ID, title: 'Orquestra', columns: 48 })
+    return { text: r.isPlaced ? 'Painel da Orquestra aberto.' : 'Nenhuma tela desenhou o painel agora (o app decide onde ele cabe).' }
+  })
+
   on('command.run', { command: 'descartar' }, async ($) => {
     const p = await read($, planoAtom)
     if (!p) return { text: 'Não há plano para descartar.' }
@@ -396,13 +438,33 @@ export const register: Register = on => {
     return next(querPlano ? { ...e, context: [...(e.context ?? []), INSTRUCAO_PLANEJADOR] } : e)
   })
 
-  // Enquanto planeja, o planejador só lê: nada de editar arquivo.
+  // Enquanto planeja, o planejador só lê: nada de editar arquivo. Para o painel,
+  // toda chamada de ferramenta (inclusive de executores) também é contada aqui.
   on('tool.call', async ($, e, next) => {
-    if (e.agentId !== undefined) return next(e)
-    if (e.tool !== 'Edit' && e.tool !== 'Write' && e.tool !== 'NotebookEdit') return next(e)
-    if ((await read($, planoAtom))?.fase !== 'planejando') return next(e)
+    const edita = e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit'
+    if (edita && e.agentId === undefined && (await read($, planoAtom))?.fase === 'planejando') {
+      return { deny: 'Modo planejador: não edite arquivos agora. Termine o plano com <plano>…</plano>; a execução vem depois da aprovação.' }
+    }
 
-    return { deny: 'Modo planejador: não edite arquivos agora. Termine o plano com <plano>…</plano>; a execução vem depois da aprovação.' }
+    const nome = String(e.tool)
+    const caminho =
+      e.tool === 'Edit' || e.tool === 'Write' ? e.file_path : e.tool === 'NotebookEdit' ? e.notebook_path : undefined
+
+    const r = await next(e)
+
+    await update($, ferramentasAtom, c => ({ ...c, [nome]: (c[nome] ?? 0) + 1 }))
+    if (caminho && !r.deny) {
+      await update($, arquivosAtom, l => [caminho, ...l.filter(o => o !== caminho)].slice(0, 30))
+    }
+    if (!r.deny && r.isError) {
+      await update($, errosAtom, n => n + 1)
+      await update($, ultimoErroAtom, o => ({ tool: nome, seguidos: o?.tool === nome ? o.seguidos + 1 : 1 }))
+    } else if (!r.deny) {
+      await update($, ultimoErroAtom, o => (o?.tool === nome ? null : o))
+    }
+    await lerUso($)
+
+    return r
   })
 
   // Toda chamada do turno principal sai com o modelo e o esforço escolhidos;
@@ -417,6 +479,23 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const resposta = await next(e)
+
+    // Para o painel: o que este turno custou, e se o modelo mudou desde o turno anterior.
+    if (e.usage) {
+      const agente = e.agentId !== undefined
+      const usage = e.usage
+      const ts = await $.clock.now().catch(() => 0)
+      let trocou = false
+      await update($, turnosAtom, lista => {
+        const anterior = [...lista].reverse().find(t => !t.agente)
+        const turno = novoTurno((lista[lista.length - 1]?.n ?? 0) + 1, usage, ts, agente)
+        trocou = !agente && anterior !== undefined && anterior.modelo !== turno.modelo
+        return [...lista, turno].slice(-200)
+      })
+      if (trocou) await update($, trocasAtom, n => n + 1)
+    }
+    ultimaLeitura = 0
+    await lerUso($)
 
     // Fim de um executor: registra, libera o que dependia dele, quem sabe fecha.
     if (e.agentId !== undefined) {

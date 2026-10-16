@@ -54,6 +54,25 @@ No app desktop: clique em **+** ao lado do campo de texto, depois **Plugins**, *
 - `/planejar <escopo>`: força o planejador, se o automático não pegar.
 - `/aprovar [sem 2 3] [4=6]`: aprova o plano; `sem` pula tarefas e `4=6` põe a tarefa 4 no nível 6.
 - `/descartar`: descarta o plano (agentes já em andamento terminam, mas nada novo começa).
+- `/painel`: abre o painel ao vivo da sessão.
+
+## Painel ao vivo
+
+`/painel` abre um painel que se atualiza sozinho com o que acontece na sessão:
+
+| Bloco | O que mostra | De onde vem |
+|---|---|---|
+| Atendendo agora | Modelo do último turno, esforço e nota; custo; limite de uso; economia estimada | Uso real reportado pela API em cada turno e a leitura de uso da sessão |
+| Janela de contexto | Barra de ocupação com a marca dos 70% | Leitura de uso da sessão |
+| Gasto por modelo | Barra empilhada e US$ por Haiku, Sonnet e Opus, com o número de turnos | Tokens de cada turno vezes a tabela de preços da API |
+| Turnos | Uma barra por turno (altura = tokens, cor = modelo; executores esmaecidos) e quantas vezes o modelo trocou | Uso de cada turno |
+| Plano | Tarefas, status e nível de cada uma | Estado do plano |
+| Ferramentas | As mais usadas, erros e arquivos editados | Cada chamada de ferramenta, de qualquer agente |
+| Alertas | Trocas de modelo em excesso, mesma ferramenta falhando, contexto acima de 60%, limite de uso acima de 80% | Regras simples sobre os números acima |
+
+Cada modelo também aparece por escrito, não só pela cor.
+
+**A economia é estimada.** Ela compara o custo real com o que custaria se os mesmos tokens tivessem rodado no Opus. Não conta que o esforço e a qualidade mudam a quantidade de tokens, e o custo do cache escrito é aproximado. Só aparece depois de 3 turnos. O painel não abre sozinho, e é o app que decide em que lugar da tela ele fica.
 
 ## Ajustes
 
@@ -63,3 +82,4 @@ A tabela `NIVEIS` no topo de `hooks/register.ts` define quem atende cada nível.
 
 - Ainda não foi calibrado com uso real prolongado; a precisão da nota depende do pedido.
 - O mod só enxerga a resposta final de cada executor (cortada em 1500 caracteres), não os arquivos que ele editou.
+- Os preços do painel são os da tabela da API; numa assinatura o consumo do limite de uso não segue exatamente esses valores.

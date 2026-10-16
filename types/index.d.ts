@@ -31,6 +31,30 @@ export type Plano = {
   tarefas: Tarefa[]
 }
 
+// Um turno da conversa (principal ou de um executor), com o que a API cobrou.
+export type Turno = {
+  n: number
+  modelo: string
+  ent: number
+  sai: number
+  cl: number
+  ce: number
+  tokens: number
+  custo: number
+  ts: number
+  agente: boolean
+}
+
+export type UsoSessao = {
+  percent: number | null
+  tokens: number | null
+  janela: number
+  usd: number | null
+  limites: { tipo: string; percent: number }[]
+}
+
+export type UltimoErro = { tool: string; seguidos: number }
+
 declare module 'claude-code' {
   interface PluginState {
     orquestra: {
@@ -39,6 +63,13 @@ declare module 'claude-code' {
       historico: Decisao[]
       planoAuto: boolean
       plano: Plano | null
+      turnos: Turno[]
+      ferramentas: Record<string, number>
+      arquivos: string[]
+      erros: number
+      ultimoErro: UltimoErro | null
+      trocasModelo: number
+      usoSessao: UsoSessao | null
     }
   }
 }
