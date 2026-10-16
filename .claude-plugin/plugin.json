@@ -1,0 +1,6 @@
+{
+  "name": "recepcionista",
+  "version": "0.1.0",
+  "description": "Recepcionista: escolhe o modelo de cada prompt e, em projeto grande, planeja, pede aprovação e manda executores (um por tarefa) com o modelo certo",
+  "types": "./types/index.d.ts"
+}
