@@ -62,7 +62,7 @@ test('projeto grande: planeja, pede aprovação, executa em ondas e chama a revi
   })
   on('turn.complete', ($, e) => ({ text: e.answer }))
 
-  respostas.push('{"nivel": 6, "projeto": true, "motivo": "sistema novo"}')
+  respostas.push('{"nivel": 8, "projeto": true, "motivo": "sistema novo"}')
   await $.prompt.submit({ text: 'constrói um sistema de cobrança inteiro' })
 
   const status1 = await $.command.run({ command: 'orquestra', args: '' })

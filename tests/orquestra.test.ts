@@ -24,7 +24,7 @@ test('cada prompt escolhe modelo e esforço do turno principal', async ($, on) =
   }
 
   // Bug sutil: Opus, high.
-  respostas.push('{"nivel": 5, "motivo": "bug sutil de concorrência"}')
+  respostas.push('{"nivel": 8, "motivo": "bug sutil de concorrência"}')
   await $.prompt.submit({ text: 'tem uma race condition no worker' })
   let visto = await passo()
   expect(visto.model).toBe('claude-opus-5-5')
@@ -35,7 +35,7 @@ test('cada prompt escolhe modelo e esforço do turno principal', async ($, on) =
   expect(visto.model).toBe('claude-sonnet-5-5')
 
   // Queda de um nível só: mantém Opus high (não perde o cache).
-  respostas.push('{"nivel": 4, "motivo": "refatoração"}')
+  respostas.push('{"nivel": 7, "motivo": "refatoração"}')
   await $.prompt.submit({ text: 'agora refatora esse módulo' })
   visto = await passo()
   expect(visto.model).toBe('claude-opus-5-5')
@@ -48,7 +48,7 @@ test('cada prompt escolhe modelo e esforço do turno principal', async ($, on) =
   expect(visto.model).toBe('claude-haiku-5-5')
   expect(visto.effort).toBe('low')
 
-  // Resposta que não é JSON: cai no nível 3 (Sonnet medium).
+  // Resposta que não é JSON: cai no nível padrão 5 (Sonnet medium).
   respostas.push('não sei')
   await $.prompt.submit({ text: 'cria um endpoint de login' })
   visto = await passo()

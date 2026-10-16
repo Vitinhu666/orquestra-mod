@@ -55,6 +55,9 @@ export type UsoSessao = {
 
 export type UltimoErro = { tool: string; seguidos: number }
 
+// Modelo e esforço escolhidos à mão; enquanto existir, a triagem não roda.
+export type Fixo = { modelo: string; rotulo: string; esforco: Esforco }
+
 // Compactação automática: liga/desliga e o percentual do contexto que dispara.
 export type Compactar = { ligado: boolean; limiar: number; ultima: number | null }
 
@@ -90,6 +93,7 @@ declare module 'claude-code' {
       usoSessao: UsoSessao | null
       agentes: Agente[]
       compactar: Compactar
+      fixo: Fixo | null
     }
   }
 }

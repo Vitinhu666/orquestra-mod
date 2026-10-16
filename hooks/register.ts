@@ -21,37 +21,56 @@ type Ctx = EngineInterface
 // Os seis níveis: edite aqui para mudar quem atende cada um.
 const NIVEIS: Record<number, { nome: string; modelo: string; rotulo: string; esforco: Esforco }> = {
   1: { nome: 'Trivial', modelo: 'claude-haiku-5-5', rotulo: 'Haiku', esforco: 'low' },
-  2: { nome: 'Simples', modelo: 'claude-sonnet-5-5', rotulo: 'Sonnet', esforco: 'low' },
-  3: { nome: 'Normal', modelo: 'claude-sonnet-5-5', rotulo: 'Sonnet', esforco: 'medium' },
-  4: { nome: 'Difícil', modelo: 'claude-opus-5-5', rotulo: 'Opus', esforco: 'medium' },
-  5: { nome: 'Muito difícil', modelo: 'claude-opus-5-5', rotulo: 'Opus', esforco: 'high' },
-  6: { nome: 'Ultra', modelo: 'claude-opus-5-5', rotulo: 'Opus', esforco: 'max' },
+  2: { nome: 'Simples', modelo: 'claude-haiku-5-5', rotulo: 'Haiku', esforco: 'medium' },
+  3: { nome: 'Simples+', modelo: 'claude-haiku-5-5', rotulo: 'Haiku', esforco: 'high' },
+  4: { nome: 'Normal leve', modelo: 'claude-sonnet-5-5', rotulo: 'Sonnet', esforco: 'low' },
+  5: { nome: 'Normal', modelo: 'claude-sonnet-5-5', rotulo: 'Sonnet', esforco: 'medium' },
+  6: { nome: 'Difícil', modelo: 'claude-sonnet-5-5', rotulo: 'Sonnet', esforco: 'high' },
+  7: { nome: 'Muito difícil', modelo: 'claude-opus-5-5', rotulo: 'Opus', esforco: 'medium' },
+  8: { nome: 'Crítico', modelo: 'claude-opus-5-5', rotulo: 'Opus', esforco: 'high' },
 }
-const NIVEL_PADRAO = 3
+const NIVEL_MAX = 8
+const NIVEL_PADRAO = 5
 // A partir daqui um pedido de projeto grande vira plano (planejador + executores).
-const LIMIAR_PLANO = 5
+const LIMIAR_PLANO = 7
+// O planejador sempre roda no topo da escada automática.
+const NIVEL_PLANEJADOR = 8
 
-const CLASSIFICADOR = `Você faz a triagem dos pedidos de um assistente de programação. Leia o pedido e dê uma nota de dificuldade de 1 a 6, que decide qual modelo vai trabalhar nele.
+// Modelos que dá para fixar à mão (/orquestra fixar <modelo> <esforço>), inclusive em xhigh e max.
+const MODELOS_FIXAVEIS: Record<string, { modelo: string; rotulo: string }> = {
+  haiku: { modelo: 'claude-haiku-5-5', rotulo: 'Haiku' },
+  sonnet: { modelo: 'claude-sonnet-5-5', rotulo: 'Sonnet' },
+  opus: { modelo: 'claude-opus-5-5', rotulo: 'Opus' },
+}
+const ESFORCOS: Esforco[] = ['low', 'medium', 'high', 'xhigh', 'max']
 
-1 Trivial: saudação, pergunta rápida de fato, typo, renomear algo, rodar um comando conhecido, "ok", "valeu".
-2 Simples: edição pequena e clara em um arquivo, explicar um trecho curto, ajuste de texto ou estilo.
-3 Normal: feature pequena, bug com causa visível, mudança em poucos arquivos, escrever um teste.
-4 Difícil: mudança em vários arquivos, refatoração, bug sem causa óbvia, integrar uma API nova.
-5 Muito difícil: arquitetura, bug sutil (concorrência, memória, segurança), migração grande, desempenho.
-6 Ultra: sistema novo do zero com muitas partes, problema de pesquisa, decisão crítica e cara de errar.
+const CLASSIFICADOR = `Você faz a triagem dos pedidos de um assistente de programação. Leia o pedido e dê uma nota de 1 a 8, que decide qual modelo e qual esforço vão trabalhar nele. A escada sobe primeiro o esforço do modelo mais barato e só depois troca de modelo:
 
-Pedidos de continuação ("continua", "faz isso", "pode seguir", "sim") herdam a nota anterior, a não ser que peçam algo claramente mais leve ou mais pesado.
-Na dúvida entre duas notas, escolha a maior.
+1 Haiku low: saudação, "ok", "valeu", pergunta rápida de fato, rodar um comando conhecido.
+2 Haiku medium: typo, renomear algo, edição pequena e óbvia em um arquivo, explicar um trecho curto.
+3 Haiku high: ajuste pequeno que pede um pouco de atenção (texto, estilo, config, um teste simples).
+4 Sonnet low: feature pequena e clara, bug com causa visível, mudança em poucos arquivos.
+5 Sonnet medium: feature média, bug que pede investigação, escrever vários testes.
+6 Sonnet high: mudança em vários arquivos, refatoração, bug sem causa óbvia, integrar uma API nova.
+7 Opus medium: só para o MUITO difícil: arquitetura, bug sutil (concorrência, memória, segurança), migração grande, desempenho.
+8 Opus high: crítico: sistema novo do zero com muitas partes, decisão cara de errar, problema de pesquisa.
+
+Regras:
+- Escolha o nível mais barato que resolve BEM o pedido. Se o Sonnet em high dá conta, use 6, não 7.
+- Opus (7 e 8) só quando o pedido é de fato muito difícil. Tamanho do texto do pedido não é dificuldade.
+- Na dúvida entre duas notas vizinhas do mesmo modelo, escolha a maior. Na dúvida entre trocar ou não de modelo, fique no mais barato com o esforço mais alto.
+- Pedidos de continuação ("continua", "faz isso", "pode seguir", "sim") herdam a nota anterior, a não ser que peçam algo claramente mais leve ou mais pesado.
 
 Diga também se o pedido é um PROJETO: um escopo novo e grande que vale quebrar em várias tarefas para vários agentes (construir um sistema, uma migração grande, uma feature com muitas partes). Continuação, pergunta, ajuste, correção de bug e tarefa isolada NÃO são projeto.
 
-Responda só com JSON, sem mais nada: {"nivel": <1-6>, "projeto": <true|false>, "motivo": "<até 12 palavras em português>"}`
+Responda só com JSON, sem mais nada: {"nivel": <1-8>, "projeto": <true|false>, "motivo": "<até 12 palavras em português>"}`
 
 const ligado = atom({ plugin: 'orquestra', key: 'ligado' } as const, true)
 const atual = atom({ plugin: 'orquestra', key: 'atual' } as const, null)
 const historico = atom({ plugin: 'orquestra', key: 'historico' } as const, [])
 const planoAuto = atom({ plugin: 'orquestra', key: 'planoAuto' } as const, true)
 const planoAtom = atom({ plugin: 'orquestra', key: 'plano' } as const, null)
+const fixoAtom = atom({ plugin: 'orquestra', key: 'fixo' } as const, null)
 const turnosAtom = atom({ plugin: 'orquestra', key: 'turnos' } as const, [])
 const ferramentasAtom = atom({ plugin: 'orquestra', key: 'ferramentas' } as const, {})
 const arquivosAtom = atom({ plugin: 'orquestra', key: 'arquivos' } as const, [])
@@ -122,7 +141,7 @@ const MARCA: Record<StatusTarefa, string> = {
 
 function nivelValido(n: unknown): number {
   const v = Math.round(Number(n))
-  return v >= 1 && v <= 6 ? v : NIVEL_PADRAO
+  return v >= 1 && v <= NIVEL_MAX ? v : NIVEL_PADRAO
 }
 
 function decisao(nivel: number, motivo: string, prompt: string): Decisao {
@@ -158,7 +177,14 @@ function progresso(p: Plano | null): string {
 async function atualizarStatus($: Ctx): Promise<void> {
   const d = await read($, atual)
   const on = await read($, ligado)
-  const base = !on ? '🛎 Orquestra desligada' : d ? `🛎 ${descrever(d)} (${NIVEIS[d.nivel]!.nome})` : '🛎 Orquestra pronta'
+  const fixo = await read($, fixoAtom)
+  const base = !on
+    ? '🛎 Orquestra desligada'
+    : fixo
+      ? `🛎 fixado: ${fixo.rotulo} · ${fixo.esforco}`
+      : d
+        ? `🛎 ${descrever(d)} (${NIVEIS[d.nivel]!.nome})`
+        : '🛎 Orquestra pronta'
   $.ui.status(base + progresso(await read($, planoAtom)))
 }
 
@@ -348,7 +374,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'orquestra',
       description: 'Orquestra de modelos: status, ligar/desligar, fixar um nível, plano automático',
-      argumentHint: '[on | off | 1-6 | plano on | plano off]',
+      argumentHint: '[on | off | 1-8 | fixar <modelo> <esforço> | auto | plano on|off | compactar on|off|N]',
     })
     await $.command.register({
       name: 'planejar',
@@ -424,15 +450,37 @@ export const register: Register = on => {
       }
     }
 
-    if (/^[1-6]$/.test(arg)) {
+    if (/^[1-8]$/.test(arg)) {
       const d = decisao(Number(arg), 'fixado por você', '')
       await update($, atual, () => d)
       await update($, ligado, () => true)
       await atualizarStatus($)
-      return { text: `Próximo turno com ${descrever(d)}. O próximo prompt ainda é reavaliado; use /orquestra off para travar o modelo do app.` }
+      return { text: `Próximo turno com ${descrever(d)}. O próximo prompt ainda é reavaliado; use /orquestra fixar para travar.` }
+    }
+
+    // Fixar à mão: vale para todos os turnos até /orquestra auto. É o único jeito de usar xhigh e max.
+    if (arg === 'fixar' || arg.startsWith('fixar ')) {
+      const [, modeloNome = '', esforcoNome = 'high'] = arg.split(/\s+/)
+      const m = MODELOS_FIXAVEIS[modeloNome]
+      const esforco = ESFORCOS.find(x => x === esforcoNome)
+      if (!m || !esforco) {
+        return { text: `Uso: /orquestra fixar <${Object.keys(MODELOS_FIXAVEIS).join('|')}> <${ESFORCOS.join('|')}>, por exemplo /orquestra fixar opus max. /orquestra auto volta ao automático.` }
+      }
+      await update($, fixoAtom, () => ({ modelo: m.modelo, rotulo: m.rotulo, esforco }))
+      await update($, ligado, () => true)
+      await atualizarStatus($)
+      return { text: `Fixado em ${m.rotulo} · ${esforco} para todos os turnos, sem triagem. /orquestra auto volta ao automático.` }
+    }
+
+    if (arg === 'auto') {
+      await update($, fixoAtom, () => null)
+      await update($, ligado, () => true)
+      await atualizarStatus($)
+      return { text: 'Automático de novo: cada prompt volta a passar pela triagem.' }
     }
 
     const isLigado = await read($, ligado)
+    const fixo = await read($, fixoAtom)
     const auto = await read($, planoAuto)
     const compactar = await read($, compactarAtom)
     const d = await read($, atual)
@@ -446,7 +494,7 @@ export const register: Register = on => {
 
     return {
       text: [
-        `Orquestra ${isLigado ? 'ligada' : 'desligada'}. ${d ? `Agora: ${descrever(d)} (${d.motivo}).` : 'Nenhuma decisão ainda.'}`,
+        `Orquestra ${isLigado ? 'ligada' : 'desligada'}. ${fixo ? `FIXADA em ${fixo.rotulo} · ${fixo.esforco} (sem triagem; /orquestra auto volta ao automático).` : d ? `Agora: ${descrever(d)} (${d.motivo}).` : 'Nenhuma decisão ainda.'}`,
         `Plano automático: ${auto ? 'ligado' : 'desligado'} (projetos de nível ${LIMIAR_PLANO}+).`,
         `Compactação automática: ${compactar.ligado ? `ligada em ${compactar.limiar}% do contexto` : 'desligada'}.`,
         '',
@@ -455,7 +503,8 @@ export const register: Register = on => {
         '',
         ultimas ? `Últimas decisões:\n${ultimas}\n` : '',
         p ? `Plano (${p.fase}): ${p.objetivo || p.pedido}\n${listaTarefas(p)}\n` : '',
-        'Uso: /orquestra on | off | 1-6 | plano on | plano off   ·   /planejar <escopo>',
+        'xhigh e max não entram no automático: use /orquestra fixar <haiku|sonnet|opus> <low|medium|high|xhigh|max>.',
+        'Uso: /orquestra on | off | 1-8 | fixar <modelo> <esforço> | auto | plano on|off | compactar on|off|<10-95>   ·   /planejar <escopo>',
       ].join('\n'),
     }
   })
@@ -464,7 +513,7 @@ export const register: Register = on => {
     const escopo = e.args.trim()
     if (!escopo) return { text: 'Uso: /planejar <escopo do projeto>' }
 
-    const d = decisao(LIMIAR_PLANO, 'planejamento pedido por você', escopo)
+    const d = decisao(NIVEL_PLANEJADOR, 'planejamento pedido por você', escopo)
     await update($, atual, () => d)
     await update($, ligado, () => true)
     await update($, planoAtom, () => ({ fase: 'planejando' as const, pedido: escopo, objetivo: '', tarefas: [] }))
@@ -538,6 +587,9 @@ export const register: Register = on => {
       return p?.fase === 'planejando' ? next({ ...e, context: [...(e.context ?? []), INSTRUCAO_PLANEJADOR] }) : next(e)
     }
 
+    // Fixado à mão: sem triagem (e sem a chamada ao Haiku).
+    if (await read($, fixoAtom)) return next(e)
+
     const anterior = await read($, atual)
     const { nova, projeto } = await classificar($, e.text, anterior, 'Pedido do usuário')
     let escolhida = aplicarEstabilidade(nova, anterior)
@@ -608,6 +660,8 @@ export const register: Register = on => {
   // os executores têm o deles na definição do agente.
   on('turn.step', async function* ($, e, next) {
     if (e.agentId !== undefined || !(await read($, ligado))) return yield* next(e)
+    const fixo = await read($, fixoAtom)
+    if (fixo) return yield* next({ ...e, model: fixo.modelo, effort: fixo.esforco })
     const d = await read($, atual)
     if (!d) return yield* next(e)
 

@@ -4,19 +4,23 @@ Plugin para o Claude Code que escolhe sozinho **qual modelo e qual esforço** us
 
 ## O que ele faz
 
-1. **Dá uma nota de 1 a 6 a cada prompt.** Um classificador rápido (Haiku) lê o pedido e escolhe quem atende:
+1. **Dá uma nota de 1 a 8 a cada prompt.** Um classificador rápido (Haiku) lê o pedido e escolhe quem atende. A escada sobe primeiro o esforço do modelo mais barato e só depois troca de modelo:
 
    | Nota | Tipo de pedido | Modelo e esforço |
    |---|---|---|
-   | 1 | Trivial (agradecimento, pergunta rápida, typo) | Haiku · low |
-   | 2 | Simples (edição pequena e clara) | Sonnet · low |
-   | 3 | Normal (feature pequena, bug visível) | Sonnet · medium |
-   | 4 | Difícil (vários arquivos, refatoração) | Opus · medium |
-   | 5 | Muito difícil (arquitetura, bug sutil) | Opus · high |
-   | 6 | Ultra (sistema novo, decisão crítica) | Opus · max |
+   | 1 | Trivial (agradecimento, pergunta rápida) | Haiku · low |
+   | 2 | Simples (typo, renomear, edição óbvia) | Haiku · medium |
+   | 3 | Simples, com mais atenção (config, um teste simples) | Haiku · high |
+   | 4 | Normal leve (feature pequena, bug visível) | Sonnet · low |
+   | 5 | Normal (feature média, bug que pede investigação) | Sonnet · medium |
+   | 6 | Difícil (vários arquivos, refatoração) | Sonnet · high |
+   | 7 | Muito difícil (arquitetura, bug sutil, migração grande) | Opus · medium |
+   | 8 | Crítico (sistema novo, decisão cara de errar) | Opus · high |
+
+   O Opus fica só para o que é de fato muito difícil: se o Sonnet em high dá conta, ele usa o Sonnet em high. **`xhigh` e `max` nunca são escolhidos sozinhos**: para usar, fixe à mão com `/orquestra fixar opus max` (ou qualquer modelo e esforço) e volte com `/orquestra auto`.
 
 2. **Troca o modelo da conversa automaticamente**, a cada turno, e mostra na linha de status quem está atendendo. Para não perder o cache do contexto, só desce de nível quando a queda é grande; subir é sempre na hora.
-3. **Em projeto grande, planeja antes de executar.** Quando o pedido é um escopo novo e grande (nota 5 ou 6), o planejador lê o projeto, quebra o trabalho em tarefas com dependências e arquivos previstos, e o recepcionista dá uma nota a cada tarefa. O plano aparece com o modelo de cada uma e **só executa depois do seu `/aprovar`**.
+3. **Em projeto grande, planeja antes de executar.** Quando o pedido é um escopo novo e grande (nota 7 ou 8), o planejador lê o projeto, quebra o trabalho em tarefas com dependências e arquivos previstos, e o recepcionista dá uma nota a cada tarefa. O plano aparece com o modelo de cada uma e **só executa depois do seu `/aprovar`**.
 4. **Executa em ondas, um subagente por tarefa.** Cada tarefa roda num agente novo, com contexto limpo, no modelo e esforço da nota dela. Tarefas independentes rodam juntas (se não mexem no mesmo arquivo); as que dependem de outra esperam e recebem o resultado dela. Se uma falha, as dependentes ficam bloqueadas.
 5. **Revisão final.** Quando as tarefas acabam, a sessão principal confere se as peças se encaixam e resume o que foi feito.
 6. **Compacta a conversa sozinho.** Quando o contexto passa de 65%, ele roda o equivalente a um `/compact` no fim do turno, pedindo para manter o plano, as decisões, os arquivos em edição e o que falta fazer. Faz isso uma vez por subida; se o próximo turno já tiver começado, tenta de novo no fim dele.
@@ -52,9 +56,9 @@ No app desktop: clique em **+** ao lado do campo de texto, depois **Plugins**, *
 
 ## Comandos
 
-- `/orquestra`: status, tabela de níveis, últimas decisões e o plano atual. Também aceita `on`, `off`, `1-6` (fixa um nível no próximo turno), `plano on|off` e `compactar on|off|<10-95>` (liga, desliga ou muda o limite da compactação automática; o padrão é 65).
+- `/orquestra`: status, tabela de níveis, últimas decisões e o plano atual. Também aceita `on`, `off`, `1-8` (um nível só no próximo turno), `fixar <haiku|sonnet|opus> <low|medium|high|xhigh|max>` (trava modelo e esforço em todos os turnos, sem triagem), `auto` (volta ao automático), `plano on|off` e `compactar on|off|<10-95>` (liga, desliga ou muda o limite da compactação automática; o padrão é 65).
 - `/planejar <escopo>`: força o planejador, se o automático não pegar.
-- `/aprovar [sem 2 3] [4=6]`: aprova o plano; `sem` pula tarefas e `4=6` põe a tarefa 4 no nível 6.
+- `/aprovar [sem 2 3] [4=6]`: aprova o plano; `sem` pula tarefas e `4=6` põe a tarefa 4 no nível 6 (de 1 a 8).
 - `/descartar`: descarta o plano (agentes já em andamento terminam, mas nada novo começa).
 - `/painel`: abre o painel ao vivo da sessão.
 
