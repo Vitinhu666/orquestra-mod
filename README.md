@@ -19,6 +19,8 @@ Plugin para o Claude Code que escolhe sozinho **qual modelo e qual esforço** us
 3. **Em projeto grande, planeja antes de executar.** Quando o pedido é um escopo novo e grande (nota 5 ou 6), o planejador lê o projeto, quebra o trabalho em tarefas com dependências e arquivos previstos, e o recepcionista dá uma nota a cada tarefa. O plano aparece com o modelo de cada uma e **só executa depois do seu `/aprovar`**.
 4. **Executa em ondas, um subagente por tarefa.** Cada tarefa roda num agente novo, com contexto limpo, no modelo e esforço da nota dela. Tarefas independentes rodam juntas (se não mexem no mesmo arquivo); as que dependem de outra esperam e recebem o resultado dela. Se uma falha, as dependentes ficam bloqueadas.
 5. **Revisão final.** Quando as tarefas acabam, a sessão principal confere se as peças se encaixam e resume o que foi feito.
+6. **Compacta a conversa sozinho.** Quando o contexto passa de 65%, ele roda o equivalente a um `/compact` no fim do turno, pedindo para manter o plano, as decisões, os arquivos em edição e o que falta fazer. Faz isso uma vez por subida; se o próximo turno já tiver começado, tenta de novo no fim dele.
+7. **Painel ao vivo** (`/painel`) com o que cada agente está fazendo, custo, contexto e alertas.
 
 ## Quanto ele pode economizar
 
@@ -50,7 +52,7 @@ No app desktop: clique em **+** ao lado do campo de texto, depois **Plugins**, *
 
 ## Comandos
 
-- `/orquestra`: status, tabela de níveis, últimas decisões e o plano atual. Também aceita `on`, `off`, `1-6` (fixa um nível no próximo turno) e `plano on|off`.
+- `/orquestra`: status, tabela de níveis, últimas decisões e o plano atual. Também aceita `on`, `off`, `1-6` (fixa um nível no próximo turno), `plano on|off` e `compactar on|off|<10-95>` (liga, desliga ou muda o limite da compactação automática; o padrão é 65).
 - `/planejar <escopo>`: força o planejador, se o automático não pegar.
 - `/aprovar [sem 2 3] [4=6]`: aprova o plano; `sem` pula tarefas e `4=6` põe a tarefa 4 no nível 6.
 - `/descartar`: descarta o plano (agentes já em andamento terminam, mas nada novo começa).
@@ -63,7 +65,8 @@ No app desktop: clique em **+** ao lado do campo de texto, depois **Plugins**, *
 | Bloco | O que mostra | De onde vem |
 |---|---|---|
 | Atendendo agora | Modelo do último turno, esforço e nota; custo; limite de uso; economia estimada | Uso real reportado pela API em cada turno e a leitura de uso da sessão |
-| Janela de contexto | Barra de ocupação com a marca dos 70% | Leitura de uso da sessão |
+| Agentes | Uma linha por agente (a conversa principal e cada subagente): status, modelo, última ação (`Edit app.ts`, `Bash npm test`), quantas ferramentas usou e há quanto tempo roda; aviso se ficar mais de 10 min sem atividade | Cada início de subagente, chamada de ferramenta e fim de turno |
+| Janela de contexto | Barra de ocupação com a marca do limite de compactação | Leitura de uso da sessão |
 | Gasto por modelo | Barra empilhada e US$ por Haiku, Sonnet e Opus, com o número de turnos | Tokens de cada turno vezes a tabela de preços da API |
 | Turnos | Uma barra por turno (altura = tokens, cor = modelo; executores esmaecidos) e quantas vezes o modelo trocou | Uso de cada turno |
 | Plano | Tarefas, status e nível de cada uma | Estado do plano |
@@ -83,3 +86,4 @@ A tabela `NIVEIS` no topo de `hooks/register.ts` define quem atende cada nível.
 - Ainda não foi calibrado com uso real prolongado; a precisão da nota depende do pedido.
 - O mod só enxerga a resposta final de cada executor (cortada em 1500 caracteres), não os arquivos que ele editou.
 - Os preços do painel são os da tabela da API; numa assinatura o consumo do limite de uso não segue exatamente esses valores.
+- O painel, o bloco de agentes e a compactação automática foram testados com o kit de testes do Claude Code, mas ainda pouco em uso real. Se algo não aparecer, `/orquestra compactar off` e `/orquestra off` desligam as partes automáticas.

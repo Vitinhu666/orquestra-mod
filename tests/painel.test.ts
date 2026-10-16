@@ -64,3 +64,27 @@ test('o painel conta turnos por modelo, ferramentas, erros e arquivos', async ($
     await ui.unmount()
   }
 })
+
+test('o painel mostra o que cada agente está fazendo', async ($, on) => {
+  on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('tool.call', () => ({ result: { type: 'create', filePath: 'C:/x/src/app.ts', content: '', structuredPatch: [], originalFile: null } }))
+
+  for (const surface of SUPERFICIES) {
+    const vazio = await $.ui.mount({ plugin: 'orquestra', surface, ...PANE })
+    expect(await vazio.find({ text: /Nenhum agente ainda/ })).toBeDefined()
+    await vazio.unmount()
+  }
+
+  await $.tool.call({ tool: 'Write', file_path: 'C:/x/src/app.ts', content: '' })
+  await $.turn.complete({ turnId: 'a', agentId: 'agente-7', answer: 'feito', durationMs: 1, isAborted: false, reason: 'answer', usage: usage('claude-haiku-5-5', 100, 50) })
+
+  for (const surface of SUPERFICIES) {
+    const ui = await $.ui.mount({ plugin: 'orquestra', surface, ...PANE })
+    expect(await ui.find({ text: /Agentes/ })).toBeDefined()
+    expect(await ui.find({ text: /Principal/ })).toBeDefined()
+    expect(await ui.find({ text: /Write app\.ts/ })).toBeDefined()
+    expect(await ui.find({ text: /1 ferramenta/ })).toBeDefined()
+    expect(await ui.find({ text: /Haiku/ })).toBeDefined()
+    await ui.unmount()
+  }
+})

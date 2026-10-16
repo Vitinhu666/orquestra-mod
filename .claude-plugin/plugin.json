@@ -1,6 +1,6 @@
 {
   "name": "orquestra",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Orquestra: escolhe o modelo de cada prompt e, em projeto grande, planeja, pede aprovação e manda executores (um por tarefa) com o modelo certo",
   "types": "./types/index.d.ts"
 }

@@ -1,8 +1,8 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, TurnCompleteInput } from 'claude-code'
 
-import type { Decisao, Esforco, Plano, StatusTarefa, Tarefa } from '../types'
-import { novoTurno } from './painel-dados'
+import type { Agente, Decisao, Esforco, Plano, StatusTarefa, Tarefa } from '../types'
+import { LIMIAR_COMPACTAR_PADRAO, novoTurno, resumirAcao } from './painel-dados'
 import { PAINEL_ID, registrarPainel } from './painel'
 import {
   INSTRUCAO_PLANEJADOR,
@@ -59,6 +59,57 @@ const errosAtom = atom({ plugin: 'orquestra', key: 'erros' } as const, 0)
 const ultimoErroAtom = atom({ plugin: 'orquestra', key: 'ultimoErro' } as const, null)
 const trocasAtom = atom({ plugin: 'orquestra', key: 'trocasModelo' } as const, 0)
 const usoAtom = atom({ plugin: 'orquestra', key: 'usoSessao' } as const, null)
+const agentesAtom = atom({ plugin: 'orquestra', key: 'agentes' } as const, [])
+const compactarAtom = atom(
+  { plugin: 'orquestra', key: 'compactar' } as const,
+  { ligado: true, limiar: LIMIAR_COMPACTAR_PADRAO, ultima: null },
+)
+
+const INSTRUCOES_COMPACTAR =
+  'Mantenha: o objetivo da conversa, o plano atual e o status de cada tarefa, as decisões já tomadas e o porquê, ' +
+  'os arquivos em edição com os caminhos, os comandos de teste e build, os erros ainda abertos e o que falta fazer.'
+
+// Pede a compactação num timer curto: o motor recusa compactar com turno rodando,
+// então o pedido sai de um evento à parte, depois do fim do turno.
+function compactarDepois($: Ctx, percent: number, limiar: number): void {
+  void $.clock.after(50, async () => {
+    try {
+      const r = await $.session.compact({ instructions: INSTRUCOES_COMPACTAR })
+      const pulou = 'skip' in r && r.skip
+      $.ui.toast(pulou ? `Compactação não rodou: ${String(r.skip)}` : `Contexto em ${Math.round(percent)}%: sessão compactada (limite ${limiar}%).`)
+    } catch (err) {
+      // Quase sempre: um novo turno começou antes. Rearma para tentar no fim do próximo.
+      await update($, compactarAtom, c => ({ ...c, ultima: null })).catch(() => undefined)
+      $.ui.toast(`Compactação adiada: ${err instanceof Error ? err.message : String(err)}. Tento de novo no fim do próximo turno.`)
+    }
+  })
+}
+
+type AgenteParcial = Partial<Agente> & { id: string }
+
+// Cria ou atualiza o agente `id`; guarda os 20 mais recentes, a conversa principal sempre.
+async function marcarAgente($: Ctx, id: string, muda: (a: Agente) => Agente, base: AgenteParcial): Promise<void> {
+  const agora = await $.clock.now().catch(() => 0)
+  await update($, agentesAtom, lista => {
+    const existente = lista.find(a => a.id === id)
+    const inicial: Agente = {
+      nome: id === 'principal' ? 'Principal' : 'Agente',
+      tipo: '',
+      modelo: '',
+      status: 'rodando',
+      acao: '',
+      ferramentas: 0,
+      inicio: agora,
+      visto: agora,
+      ...base,
+    }
+    const novo = { ...muda(existente ?? inicial), visto: agora }
+    const resto = lista.filter(a => a.id !== id)
+    const principal = resto.filter(a => a.id === 'principal')
+    const outros = resto.filter(a => a.id !== 'principal').slice(-19)
+    return [...principal, ...outros, { ...novo, fim: novo.status === 'rodando' ? undefined : (novo.fim ?? agora) }]
+  })
+}
 
 const MARCA: Record<StatusTarefa, string> = {
   pendente: '○',
@@ -225,9 +276,54 @@ function enviarDepois($: Ctx, prompt: { text: string; asUser?: true }): void {
   })
 }
 
+// Fim de turno, lado do painel: custo do turno, troca de modelo, quem terminou,
+// e a compactação automática. Quem chama engole qualquer falha daqui.
+async function registrarFimDeTurno($: Ctx, e: TurnCompleteInput): Promise<void> {
+  const agenteDoTurno = e.agentId !== undefined
+  if (e.usage) {
+    const usage = e.usage
+    const ts = await $.clock.now().catch(() => 0)
+    let trocou = false
+    await update($, turnosAtom, lista => {
+      const anterior = [...lista].reverse().find(t => !t.agente)
+      const turno = novoTurno((lista[lista.length - 1]?.n ?? 0) + 1, usage, ts, agenteDoTurno)
+      trocou = !agenteDoTurno && anterior !== undefined && anterior.modelo !== turno.modelo
+      return [...lista, turno].slice(-200)
+    })
+    if (trocou) await update($, trocasAtom, n => n + 1)
+  }
+  ultimaLeitura = Number.NEGATIVE_INFINITY
+  await lerUso($)
+
+  const quem = e.agentId ?? 'principal'
+  const fimOk = e.reason === 'answer'
+  await marcarAgente(
+    $,
+    quem,
+    a => ({ ...a, status: fimOk ? 'ok' : 'erro', modelo: e.usage?.model ?? a.modelo, acao: a.acao || (fimOk ? 'respondeu' : `terminou com ${e.reason}`) }),
+    { id: quem },
+  )
+
+  // Compactação automática: só a conversa principal, só quando o contexto passa do limiar,
+  // e só uma vez por subida (volta a valer quando o contexto cair 10 pontos abaixo, ou
+  // quando a tentativa falhou, para tentar de novo no fim do próximo turno).
+  if (quem === 'principal' && fimOk) {
+    const cfg = await read($, compactarAtom)
+    const percent = (await read($, usoAtom))?.percent ?? null
+    if (percent !== null) {
+      if (cfg.ligado && percent >= cfg.limiar && cfg.ultima === null) {
+        await update($, compactarAtom, c => ({ ...c, ultima: percent }))
+        compactarDepois($, percent, cfg.limiar)
+      } else if (cfg.ultima !== null && percent < cfg.limiar - 10) {
+        await update($, compactarAtom, c => ({ ...c, ultima: null }))
+      }
+    }
+  }
+}
+
 // Foto do uso da sessão (contexto, custo, limites) para o painel. Uma leitura
 // por segundo no máximo, para não pesar a cada chamada de ferramenta.
-let ultimaLeitura = 0
+let ultimaLeitura = Number.NEGATIVE_INFINITY
 
 async function lerUso($: Ctx): Promise<void> {
   try {
@@ -307,6 +403,18 @@ export const register: Register = on => {
       }
     }
 
+    if (arg === 'compactar on' || arg === 'compactar off' || /^compactar \d+$/.test(arg)) {
+      const alvo = arg.split(' ')[1]!
+      if (/^\d+$/.test(alvo)) {
+        const limiar = Number(alvo)
+        if (limiar < 10 || limiar > 95) return { text: 'Use um limiar entre 10 e 95, por exemplo /orquestra compactar 65.' }
+        await update($, compactarAtom, c => ({ ...c, ligado: true, limiar, ultima: null }))
+        return { text: `Compactação automática ligada: ao passar de ${limiar}% do contexto.` }
+      }
+      await update($, compactarAtom, c => ({ ...c, ligado: alvo === 'on', ultima: null }))
+      return { text: alvo === 'on' ? 'Compactação automática ligada.' : 'Compactação automática desligada.' }
+    }
+
     if (arg === 'plano on' || arg === 'plano off') {
       await update($, planoAuto, () => arg === 'plano on')
       return {
@@ -326,6 +434,7 @@ export const register: Register = on => {
 
     const isLigado = await read($, ligado)
     const auto = await read($, planoAuto)
+    const compactar = await read($, compactarAtom)
     const d = await read($, atual)
     const hist = await read($, historico)
     const p = await read($, planoAtom)
@@ -339,6 +448,7 @@ export const register: Register = on => {
       text: [
         `Orquestra ${isLigado ? 'ligada' : 'desligada'}. ${d ? `Agora: ${descrever(d)} (${d.motivo}).` : 'Nenhuma decisão ainda.'}`,
         `Plano automático: ${auto ? 'ligado' : 'desligado'} (projetos de nível ${LIMIAR_PLANO}+).`,
+        `Compactação automática: ${compactar.ligado ? `ligada em ${compactar.limiar}% do contexto` : 'desligada'}.`,
         '',
         'Níveis:',
         tabela(),
@@ -388,6 +498,22 @@ export const register: Register = on => {
   })
 
   registrarPainel(on)
+
+  // Todo subagente que começa (do plano ou pedido pelo próprio Claude) entra no painel.
+  on('agent.spawn', async ($, e, next) => {
+    const r = await next(e)
+    if (r.agentId) {
+      const id = r.agentId
+      await marcarAgente($, id, a => a, {
+        id,
+        nome: e.description || e.subagentType || 'Agente',
+        tipo: e.subagentType,
+        modelo: r.model,
+        acao: 'começando',
+      })
+    }
+    return r
+  }).catch(($, e, next) => next(e))
 
   on('command.run', { command: 'painel' }, async $ => {
     const r = await $.ui.open({ id: PAINEL_ID, title: 'Orquestra', columns: 48 })
@@ -450,6 +576,17 @@ export const register: Register = on => {
     const caminho =
       e.tool === 'Edit' || e.tool === 'Write' ? e.file_path : e.tool === 'NotebookEdit' ? e.notebook_path : undefined
 
+    // Para o painel: o que cada agente está fazendo agora.
+    const quem = e.agentId ?? 'principal'
+    const acao = resumirAcao(nome, e as unknown as Record<string, unknown>)
+    const modeloPrincipal = quem === 'principal' ? ((await read($, atual))?.modelo ?? '') : ''
+    await marcarAgente(
+      $,
+      quem,
+      a => ({ ...a, acao, status: 'rodando', ferramentas: a.ferramentas + 1, modelo: a.modelo || modeloPrincipal }),
+      { id: quem, modelo: modeloPrincipal },
+    )
+
     const r = await next(e)
 
     await update($, ferramentasAtom, c => ({ ...c, [nome]: (c[nome] ?? 0) + 1 }))
@@ -465,7 +602,7 @@ export const register: Register = on => {
     await lerUso($)
 
     return r
-  })
+  }).catch(($, e, next) => next(e))
 
   // Toda chamada do turno principal sai com o modelo e o esforço escolhidos;
   // os executores têm o deles na definição do agente.
@@ -480,22 +617,12 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const resposta = await next(e)
 
-    // Para o painel: o que este turno custou, e se o modelo mudou desde o turno anterior.
-    if (e.usage) {
-      const agente = e.agentId !== undefined
-      const usage = e.usage
-      const ts = await $.clock.now().catch(() => 0)
-      let trocou = false
-      await update($, turnosAtom, lista => {
-        const anterior = [...lista].reverse().find(t => !t.agente)
-        const turno = novoTurno((lista[lista.length - 1]?.n ?? 0) + 1, usage, ts, agente)
-        trocou = !agente && anterior !== undefined && anterior.modelo !== turno.modelo
-        return [...lista, turno].slice(-200)
-      })
-      if (trocou) await update($, trocasAtom, n => n + 1)
+    // O painel e a compactação nunca podem travar o plano: qualquer falha aqui é engolida.
+    try {
+      await registrarFimDeTurno($, e)
+    } catch {
+      // segue para a lógica do plano
     }
-    ultimaLeitura = 0
-    await lerUso($)
 
     // Fim de um executor: registra, libera o que dependia dele, quem sabe fecha.
     if (e.agentId !== undefined) {

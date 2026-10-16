@@ -55,6 +55,24 @@ export type UsoSessao = {
 
 export type UltimoErro = { tool: string; seguidos: number }
 
+// Compactação automática: liga/desliga e o percentual do contexto que dispara.
+export type Compactar = { ligado: boolean; limiar: number; ultima: number | null }
+
+// Um agente da sessão: a conversa principal ("principal") ou um subagente.
+export type Agente = {
+  id: string
+  nome: string
+  tipo: string
+  modelo: string
+  status: 'rodando' | 'ok' | 'erro'
+  acao: string
+  ferramentas: number
+  // Última vez que o agente fez algo (ferramenta, início ou fim).
+  visto: number
+  inicio: number
+  fim?: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     orquestra: {
@@ -70,6 +88,8 @@ declare module 'claude-code' {
       ultimoErro: UltimoErro | null
       trocasModelo: number
       usoSessao: UsoSessao | null
+      agentes: Agente[]
+      compactar: Compactar
     }
   }
 }

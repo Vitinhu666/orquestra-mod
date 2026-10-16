@@ -2,7 +2,7 @@ import { atom, read } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { StatusTarefa } from '../types'
-import { ROTULO, agregarPorModelo, alertas, custoTotal, economiaEstimada, familia, pct, serieTurnos, usd } from './painel-dados'
+import { LIMIAR_COMPACTAR_PADRAO, ROTULO, agentesParaMostrar, agregarPorModelo, alertas, custoTotal, duracao, economiaEstimada, familia, pct, serieTurnos, usd } from './painel-dados'
 import type { Familia } from './painel-dados'
 
 type On = Parameters<Register>[0]
@@ -18,18 +18,20 @@ const trocasAtom = atom({ plugin: 'orquestra', key: 'trocasModelo' } as const, 0
 const usoAtom = atom({ plugin: 'orquestra', key: 'usoSessao' } as const, null)
 const atualAtom = atom({ plugin: 'orquestra', key: 'atual' } as const, null)
 const planoAtom = atom({ plugin: 'orquestra', key: 'plano' } as const, null)
+const agentesAtom = atom({ plugin: 'orquestra', key: 'agentes' } as const, [])
+const compactarAtom = atom({ plugin: 'orquestra', key: 'compactar' } as const, { ligado: true, limiar: LIMIAR_COMPACTAR_PADRAO, ultima: null })
 
 // Cor identifica o modelo, mas todo bloco também leva o nome por escrito.
 const COR: Record<Familia, string> = { haiku: '#1D9E75', sonnet: '#7F77DD', opus: '#D85A30', outro: '#888780' }
 const MARCA: Record<StatusTarefa, string> = { pendente: '○', rodando: '●', ok: '✓', erro: '✗', bloqueada: '⊘', pulada: '–' }
 const NIVEIS_BLOCO = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
-const LIMIAR_COMPACTAR = 70
+
 
 // Barra de texto com uma marca "│" no ponto em que a sessão compacta.
-function barra(percent: number | null, largura: number): { cheio: string; vazio: string } {
+function barra(percent: number | null, largura: number, limiar: number): { cheio: string; vazio: string } {
   const n = Math.max(10, largura)
   const feito = Math.max(0, Math.min(n, Math.round((n * (percent ?? 0)) / 100)))
-  const marca = Math.min(n - 1, Math.round((n * LIMIAR_COMPACTAR) / 100))
+  const marca = Math.min(n - 1, Math.round((n * limiar) / 100))
   const chars = Array.from({ length: n }, (_, i) => (i === marca ? '│' : i < feito ? '█' : '░'))
   return { cheio: chars.slice(0, feito).join(''), vazio: chars.slice(feito).join('') }
 }
@@ -52,8 +54,10 @@ export function registrarPainel(on: On): void {
     const uso = await read($, usoAtom)
     const atual = await read($, atualAtom)
     const plano = await read($, planoAtom)
+    const agentes = agentesParaMostrar(await read($, agentesAtom))
+    const agora = await $.clock.now().catch(() => 0)
 
-    const larg = Math.max(24, (e.props.bodyColumns ?? 48) - 2)
+    const larg = Math.min(60, Math.max(24, (e.props.bodyColumns ?? 48) - 2))
     const principais = turnos.filter(t => !t.agente)
     const ultimo = principais[principais.length - 1]
     const fam: Familia | null = ultimo ? familia(ultimo.modelo) : null
@@ -65,7 +69,8 @@ export function registrarPainel(on: On): void {
     const topFerramentas = Object.entries(ferramentas)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-    const ctx = barra(uso?.percent ?? null, larg)
+    const compactar = await read($, compactarAtom)
+    const ctx = barra(uso?.percent ?? null, larg, compactar.limiar)
     const limite = uso?.limites.reduce((m, l) => Math.max(m, l.percent), 0) ?? null
 
     return (
@@ -95,13 +100,44 @@ export function registrarPainel(on: On): void {
         </Box>
 
         <Box flexDirection="column">
+          <Text bold>
+            Agentes
+            <Text dimColor> · {agentes.filter(a => a.status === 'rodando').length} rodando</Text>
+          </Text>
+          {agentes.length === 0 ? (
+            <Text dimColor>Nenhum agente ainda. Quem estiver trabalhando aparece aqui, com a última ação.</Text>
+          ) : (
+            agentes.map(a => {
+              const f = familia(a.modelo)
+              const cor = a.status === 'rodando' ? 'warning' : a.status === 'ok' ? 'success' : 'error'
+              const marca = a.status === 'rodando' ? '●' : a.status === 'ok' ? '✓' : '✗'
+              const fim = a.fim ?? agora
+              return (
+                <Box flexDirection="column">
+                  <Text>
+                    <Text color={cor}>{marca}</Text> <Text bold>{a.nome}</Text>
+                    {a.modelo ? <Text color={COR[f]}> · {ROTULO[f]}</Text> : null}
+                    <Text dimColor> · {a.ferramentas} {a.ferramentas === 1 ? 'ferramenta' : 'ferramentas'} · {duracao(fim - a.inicio)}</Text>
+                  </Text>
+                  {a.status === 'rodando' && agora - a.visto > 10 * 60_000 ? (
+                    <Text color="warning" wrap="truncate">   ▲ sem atividade há {duracao(agora - a.visto)} · última: {a.acao || '…'}</Text>
+                  ) : (
+                    <Text dimColor wrap="truncate">   {a.acao || '…'}</Text>
+                  )}
+                </Box>
+              )
+            })
+          )}
+        </Box>
+
+        <Box flexDirection="column">
           <Text bold>Janela de contexto</Text>
           <Text>
             <Text color="claude">{ctx.cheio}</Text>
             <Text dimColor>{ctx.vazio}</Text>
           </Text>
           <Text dimColor>
-            {pct(uso?.percent)} · {milhares(uso?.tokens ?? null)} de {milhares(uso?.janela ?? null)} tokens · · │ marca {LIMIAR_COMPACTAR}%
+            {pct(uso?.percent)} · {milhares(uso?.tokens ?? null)} de {milhares(uso?.janela ?? null)} tokens · │ {compactar.ligado ? `compacta em ${compactar.limiar}%` : "compactação desligada"}
           </Text>
         </Box>
 

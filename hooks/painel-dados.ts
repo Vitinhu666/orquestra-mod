@@ -1,4 +1,30 @@
-import type { Turno, UltimoErro, UsoSessao } from '../types'
+import type { Agente, Turno, UltimoErro, UsoSessao } from '../types'
+
+export const LIMIAR_COMPACTAR_PADRAO = 65
+
+// "Edit app.ts", "Bash npm test", "Grep TODO": o que a chamada de ferramenta faz, curto.
+export function resumirAcao(tool: string, args: Record<string, unknown>): string {
+  const texto = (v: unknown) => (typeof v === 'string' ? v : '')
+  const caminho = texto(args.file_path) || texto(args.notebook_path) || texto(args.path)
+  const detalhe = caminho
+    ? (caminho.split(/[\\/]/).pop() ?? caminho)
+    : texto(args.command) || texto(args.pattern) || texto(args.description) || texto(args.url) || texto(args.query)
+  const curto = detalhe.replace(/\s+/g, ' ').trim()
+  return curto ? `${tool} ${curto.length > 40 ? `${curto.slice(0, 39)}…` : curto}` : tool
+}
+
+// Quem roda primeiro (a conversa principal no topo), depois os que terminaram por último.
+export function agentesParaMostrar(lista: Agente[], max = 8): Agente[] {
+  const peso = (a: Agente) => (a.id === 'principal' ? 0 : a.status === 'rodando' ? 1 : 2)
+  return [...lista]
+    .sort((a, b) => peso(a) - peso(b) || (b.fim ?? b.inicio) - (a.fim ?? a.inicio))
+    .slice(0, max)
+}
+
+export function duracao(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}min` : `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`
+}
 
 // US$ por milhão de tokens (tabela da API). Cache-escrita é estimado: entrada x1,25.
 export const PRECOS: Record<string, { ent: number; sai: number; cl: number }> = {
