@@ -1,5 +1,5 @@
 {
-  "name": "recepcionista-mods",
+  "name": "orquestra-mods",
   "owner": { "name": "Vitinhu666" },
-  "plugins": [{ "name": "recepcionista", "source": "./" }]
+  "plugins": [{ "name": "orquestra", "source": "./" }]
 }

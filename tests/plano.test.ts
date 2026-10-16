@@ -65,7 +65,7 @@ test('projeto grande: planeja, pede aprovação, executa em ondas e chama a revi
   respostas.push('{"nivel": 6, "projeto": true, "motivo": "sistema novo"}')
   await $.prompt.submit({ text: 'constrói um sistema de cobrança inteiro' })
 
-  const status1 = await $.command.run({ command: 'recepcao', args: '' })
+  const status1 = await $.command.run({ command: 'orquestra', args: '' })
   expect(JSON.stringify(status1)).toContain('Plano (planejando)')
 
   const plano =
@@ -83,13 +83,13 @@ test('projeto grande: planeja, pede aprovação, executa em ondas e chama a revi
 
   await $.command.run({ command: 'aprovar', args: '' })
   expect(spawns.map(s => s.description)).toEqual(['modelo', 'api'])
-  expect(spawns.map(s => s.subagent_type)).toEqual(['recepcionista:nivel-1', 'recepcionista:nivel-4'])
+  expect(spawns.map(s => s.subagent_type)).toEqual(['orquestra:nivel-1', 'orquestra:nivel-4'])
 
   // Este motor de teste não tem o núcleo que devolve o agentId, então os dois
   // spawns contam como não iniciados: a 3 fica bloqueada, o plano fecha e a
   // revisão final sai (num evento à parte, pelo relógio).
   await relogio.advance(100)
-  const fim2 = JSON.stringify(await $.command.run({ command: 'recepcao', args: '' }))
+  const fim2 = JSON.stringify(await $.command.run({ command: 'orquestra', args: '' }))
   expect(fim2).toContain('Plano (pronto)')
   expect(fim2).toContain('⊘ #3 tela')
   expect(enviados.some(t => t.includes('revisão final'))).toBe(true)

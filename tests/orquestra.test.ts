@@ -56,7 +56,7 @@ test('cada prompt escolhe modelo e esforço do turno principal', async ($, on) =
   expect(visto.effort).toBe('medium')
 })
 
-test('desligada, a recepção não mexe no modelo', async ($, on) => {
+test('desligada, a orquestra não mexe no modelo', async ($, on) => {
   const vistos: TurnStepInput[] = []
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('model.complete', () => ({ value: { isAnswered: true, text: '{"nivel": 6, "motivo": "x"}', usage: USO } }))
@@ -65,7 +65,7 @@ test('desligada, a recepção não mexe no modelo', async ($, on) => {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
   })
 
-  const r = await $.command.run({ command: 'recepcao', args: 'off' })
+  const r = await $.command.run({ command: 'orquestra', args: 'off' })
   expect(JSON.stringify(r)).toContain('desligada')
 
   await $.prompt.submit({ text: 'projeta um sistema distribuído inteiro' })

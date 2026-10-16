@@ -33,7 +33,7 @@ export type Plano = {
 
 declare module 'claude-code' {
   interface PluginState {
-    recepcionista: {
+    orquestra: {
       ligado: boolean
       atual: Decisao | null
       historico: Decisao[]

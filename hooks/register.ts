@@ -29,7 +29,7 @@ const NIVEL_PADRAO = 3
 // A partir daqui um pedido de projeto grande vira plano (planejador + executores).
 const LIMIAR_PLANO = 5
 
-const CLASSIFICADOR = `Você é o recepcionista de um assistente de programação. Leia o pedido e dê uma nota de dificuldade de 1 a 6, que decide qual modelo vai trabalhar nele.
+const CLASSIFICADOR = `Você faz a triagem dos pedidos de um assistente de programação. Leia o pedido e dê uma nota de dificuldade de 1 a 6, que decide qual modelo vai trabalhar nele.
 
 1 Trivial: saudação, pergunta rápida de fato, typo, renomear algo, rodar um comando conhecido, "ok", "valeu".
 2 Simples: edição pequena e clara em um arquivo, explicar um trecho curto, ajuste de texto ou estilo.
@@ -45,11 +45,11 @@ Diga também se o pedido é um PROJETO: um escopo novo e grande que vale quebrar
 
 Responda só com JSON, sem mais nada: {"nivel": <1-6>, "projeto": <true|false>, "motivo": "<até 12 palavras em português>"}`
 
-const ligado = atom({ plugin: 'recepcionista', key: 'ligado' } as const, true)
-const atual = atom({ plugin: 'recepcionista', key: 'atual' } as const, null)
-const historico = atom({ plugin: 'recepcionista', key: 'historico' } as const, [])
-const planoAuto = atom({ plugin: 'recepcionista', key: 'planoAuto' } as const, true)
-const planoAtom = atom({ plugin: 'recepcionista', key: 'plano' } as const, null)
+const ligado = atom({ plugin: 'orquestra', key: 'ligado' } as const, true)
+const atual = atom({ plugin: 'orquestra', key: 'atual' } as const, null)
+const historico = atom({ plugin: 'orquestra', key: 'historico' } as const, [])
+const planoAuto = atom({ plugin: 'orquestra', key: 'planoAuto' } as const, true)
+const planoAtom = atom({ plugin: 'orquestra', key: 'plano' } as const, null)
 
 const MARCA: Record<StatusTarefa, string> = {
   pendente: '○',
@@ -98,7 +98,7 @@ function progresso(p: Plano | null): string {
 async function atualizarStatus($: Ctx): Promise<void> {
   const d = await read($, atual)
   const on = await read($, ligado)
-  const base = !on ? '🛎 Recepção desligada' : d ? `🛎 ${descrever(d)} (${NIVEIS[d.nivel]!.nome})` : '🛎 Recepção pronta'
+  const base = !on ? '🛎 Orquestra desligada' : d ? `🛎 ${descrever(d)} (${NIVEIS[d.nivel]!.nome})` : '🛎 Orquestra pronta'
   $.ui.status(base + progresso(await read($, planoAtom)))
 }
 
@@ -185,7 +185,7 @@ async function continuar($: Ctx): Promise<void> {
     const r = await $.agent.spawn({
       prompt: promptExecutor(p.objetivo, t, p.tarefas),
       description: t.titulo,
-      subagentType: `recepcionista:nivel-${t.nivel}`,
+      subagentType: `orquestra:nivel-${t.nivel}`,
     })
     await update($, planoAtom, atual =>
       atual && {
@@ -219,8 +219,8 @@ function enviarDepois($: Ctx, prompt: { text: string; asUser?: true }): void {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
-      name: 'recepcao',
-      description: 'Recepcionista de modelos: status, ligar/desligar, fixar um nível, plano automático',
+      name: 'orquestra',
+      description: 'Orquestra de modelos: status, ligar/desligar, fixar um nível, plano automático',
       argumentHint: '[on | off | 1-6 | plano on | plano off]',
     })
     await $.command.register({
@@ -256,10 +256,10 @@ export const register: Register = on => {
   })
 
   for (const nivel of Object.keys(NIVEIS)) {
-    on('agent.offer', { agent: `recepcionista:nivel-${nivel}` }, () => ({ isOffered: false }))
+    on('agent.offer', { agent: `orquestra:nivel-${nivel}` }, () => ({ isOffered: false }))
   }
 
-  on('command.run', { command: 'recepcao' }, async ($, e) => {
+  on('command.run', { command: 'orquestra' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
 
     if (arg === 'off' || arg === 'on') {
@@ -267,8 +267,8 @@ export const register: Register = on => {
       await atualizarStatus($)
       return {
         text: arg === 'on'
-          ? 'Recepção ligada: cada prompt vai escolher o modelo.'
-          : 'Recepção desligada: vale o modelo que você escolheu no app.',
+          ? 'Orquestra ligada: cada prompt vai escolher o modelo.'
+          : 'Orquestra desligada: vale o modelo que você escolheu no app.',
       }
     }
 
@@ -286,7 +286,7 @@ export const register: Register = on => {
       await update($, atual, () => d)
       await update($, ligado, () => true)
       await atualizarStatus($)
-      return { text: `Próximo turno com ${descrever(d)}. O próximo prompt ainda é reavaliado; use /recepcao off para travar o modelo do app.` }
+      return { text: `Próximo turno com ${descrever(d)}. O próximo prompt ainda é reavaliado; use /orquestra off para travar o modelo do app.` }
     }
 
     const isLigado = await read($, ligado)
@@ -302,7 +302,7 @@ export const register: Register = on => {
 
     return {
       text: [
-        `Recepção ${isLigado ? 'ligada' : 'desligada'}. ${d ? `Agora: ${descrever(d)} (${d.motivo}).` : 'Nenhuma decisão ainda.'}`,
+        `Orquestra ${isLigado ? 'ligada' : 'desligada'}. ${d ? `Agora: ${descrever(d)} (${d.motivo}).` : 'Nenhuma decisão ainda.'}`,
         `Plano automático: ${auto ? 'ligado' : 'desligado'} (projetos de nível ${LIMIAR_PLANO}+).`,
         '',
         'Níveis:',
@@ -310,7 +310,7 @@ export const register: Register = on => {
         '',
         ultimas ? `Últimas decisões:\n${ultimas}\n` : '',
         p ? `Plano (${p.fase}): ${p.objetivo || p.pedido}\n${listaTarefas(p)}\n` : '',
-        'Uso: /recepcao on | off | 1-6 | plano on | plano off   ·   /planejar <escopo>',
+        'Uso: /orquestra on | off | 1-6 | plano on | plano off   ·   /planejar <escopo>',
       ].join('\n'),
     }
   })
