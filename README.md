@@ -37,7 +37,6 @@ No app desktop: clique em **+** ao lado do campo de texto, depois **Plugins**, *
 
 - `/orquestra`: status, tabela de níveis e últimas decisões.
 - `/orquestra on` / `off`: liga ou desliga a triagem. Desligada, vale o modelo escolhido no app.
-- `/orquestra 1` a `8`: escolhe um nível só para o próximo turno. O prompt seguinte volta a passar pela triagem.
 - `/orquestra fixar <haiku|sonnet|opus> <low|medium|high|xhigh|max>`: trava modelo e esforço em todos os turnos, sem triagem. Sem esforço, usa `high`.
 - `/orquestra auto`: volta ao automático.
 

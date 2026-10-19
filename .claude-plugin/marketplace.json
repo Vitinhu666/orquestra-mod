@@ -1,5 +1,6 @@
 {
   "name": "orquestra-mods",
   "owner": { "name": "Vitinhu666" },
+  "description": "Mods do Claude Code de Vitinhu666",
   "plugins": [{ "name": "orquestra", "source": "./" }]
 }

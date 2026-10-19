@@ -74,3 +74,43 @@ test('desligada, a orquestra não mexe no modelo', async ($, on) => {
   await s.result
   expect(vistos[0]!.model).toBe('claude-sonnet-5-5')
 })
+
+test('classificador que falha ou quebra não trava o prompt nem muda o modelo', async ($, on) => {
+  const vistos: TurnStepInput[] = []
+  let modo: 'ok' | 'sem-resposta' | 'quebra' = 'ok'
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+  on('model.complete', () => {
+    if (modo === 'quebra') throw new Error('rede caiu')
+    return modo === 'ok'
+      ? { value: { isAnswered: true, text: '{"nivel": 6, "motivo": "x"}', usage: USO } }
+      : { value: { isAnswered: false, reason: 'timeout' } }
+  })
+  on('turn.step', async function* ($, e) {
+    vistos.push(e)
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  const passo = async () => {
+    const s = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1 })
+    for await (const _ of s) void _
+    await s.result
+    return vistos[vistos.length - 1]!
+  }
+
+  await $.prompt.submit({ text: 'primeiro' })
+  expect((await passo()).model).toBe('claude-sonnet-5-5')
+
+  modo = 'sem-resposta'
+  await $.prompt.submit({ text: 'segundo' })
+  expect((await passo()).effort).toBe('high')
+
+  modo = 'quebra'
+  await $.prompt.submit({ text: 'terceiro' })
+  expect((await passo()).effort).toBe('high')
+})
+
+test('/orquestra sem argumento mostra o status e um número solto não vira comando', async ($, on) => {
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+  const r = JSON.stringify(await $.command.run({ command: 'orquestra', args: '3' }))
+  expect(r).toContain('Níveis:')
+  expect(r).toContain('Uso: /orquestra on | off | fixar')
+})

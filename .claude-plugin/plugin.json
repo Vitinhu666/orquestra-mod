@@ -1,6 +1,7 @@
 {
   "name": "orquestra",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Orquestra: escolhe o modelo e o esforço de cada prompt, de Haiku low até Opus high, e deixa fixar qualquer combinação à mão",
+  "author": { "name": "Vitinhu666" },
   "types": "./types/index.d.ts"
 }

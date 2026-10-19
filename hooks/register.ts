@@ -16,7 +16,6 @@ const NIVEIS: Record<number, { nome: string; modelo: string; rotulo: string; esf
   7: { nome: 'Muito difícil', modelo: 'claude-opus-5-5', rotulo: 'Opus', esforco: 'medium' },
   8: { nome: 'Crítico', modelo: 'claude-opus-5-5', rotulo: 'Opus', esforco: 'high' },
 }
-const NIVEL_MAX = 8
 const NIVEL_PADRAO = 5
 
 // Modelos que dá para fixar à mão (/orquestra fixar <modelo> <esforço>), inclusive em xhigh e max.
@@ -53,24 +52,24 @@ const fixoAtom = atom({ plugin: 'orquestra', key: 'fixo' } as const, null)
 
 function nivelValido(n: unknown): number {
   const v = Math.round(Number(n))
-  return v >= 1 && v <= NIVEL_MAX ? v : NIVEL_PADRAO
+  return v >= 1 && v <= 8 ? v : NIVEL_PADRAO
 }
 
 function decisao(nivel: number, motivo: string, prompt: string): Decisao {
-  const n = NIVEIS[nivel] ?? NIVEIS[NIVEL_PADRAO]!
+  const n = NIVEIS[nivel]!
   return { nivel, modelo: n.modelo, esforco: n.esforco, motivo, prompt: prompt.slice(0, 80) }
 }
 
 // Trocar de modelo joga fora o cache do contexto, então só desce de nível
 // quando a queda é grande (2 ou mais); subir é sempre na hora.
-export function aplicarEstabilidade(nova: Decisao, anterior: Decisao | null): Decisao {
+function aplicarEstabilidade(nova: Decisao, anterior: Decisao | null): Decisao {
   if (!anterior || nova.nivel >= anterior.nivel) return nova
   if (anterior.nivel - nova.nivel >= 2) return nova
   return { ...anterior, motivo: `mantido (${nova.motivo})`, prompt: nova.prompt }
 }
 
 function descrever(d: Decisao): string {
-  const n = NIVEIS[d.nivel] ?? NIVEIS[NIVEL_PADRAO]!
+  const n = NIVEIS[d.nivel]!
   return `${n.rotulo} · ${n.esforco}`
 }
 
@@ -130,7 +129,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'orquestra',
       description: 'Orquestra de modelos: status, ligar/desligar, fixar modelo e esforço',
-      argumentHint: '[on | off | 1-8 | fixar <modelo> <esforço> | auto]',
+      argumentHint: '[on | off | fixar <modelo> <esforço> | auto]',
     })
     await atualizarStatus($)
     return next(e)
@@ -147,14 +146,6 @@ export const register: Register = on => {
           ? 'Orquestra ligada: cada prompt vai escolher o modelo.'
           : 'Orquestra desligada: vale o modelo que você escolheu no app.',
       }
-    }
-
-    if (/^[1-8]$/.test(arg)) {
-      const d = decisao(Number(arg), 'fixado por você', '')
-      await update($, atual, () => d)
-      await update($, ligado, () => true)
-      await atualizarStatus($)
-      return { text: `Próximo turno com ${descrever(d)}. O próximo prompt ainda é reavaliado; use /orquestra fixar para travar.` }
     }
 
     // Fixar à mão: vale para todos os turnos até /orquestra auto. É o único jeito de usar xhigh e max.
@@ -197,7 +188,7 @@ export const register: Register = on => {
         '',
         ultimas ? `Últimas decisões:\n${ultimas}\n` : '',
         'xhigh e max não entram no automático: use /orquestra fixar <haiku|sonnet|opus> <low|medium|high|xhigh|max>.',
-        'Uso: /orquestra on | off | 1-8 | fixar <modelo> <esforço> | auto',
+        'Uso: /orquestra on | off | fixar <modelo> <esforço> | auto',
       ].join('\n'),
     }
   })
