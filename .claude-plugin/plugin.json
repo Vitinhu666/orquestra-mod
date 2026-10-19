@@ -1,6 +1,6 @@
 {
   "name": "orquestra",
-  "version": "0.4.0",
-  "description": "Orquestra: escolhe o modelo de cada prompt e, em projeto grande, planeja, pede aprovação e manda executores (um por tarefa) com o modelo certo",
+  "version": "0.5.0",
+  "description": "Orquestra: escolhe o modelo e o esforço de cada prompt, de Haiku low até Opus high, e deixa fixar qualquer combinação à mão",
   "types": "./types/index.d.ts"
 }

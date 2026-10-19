@@ -1,6 +1,6 @@
 # orquestra
 
-Plugin para o Claude Code que escolhe sozinho **qual modelo e qual esforço** usar em cada pedido, para você não gastar Opus no que o Haiku resolve. Em projeto grande, ele planeja, divide em tarefas e manda um executor por tarefa com o modelo certo para cada uma.
+Plugin para o Claude Code que escolhe sozinho **qual modelo e qual esforço** usar em cada pedido, para você não gastar Opus no que o Haiku resolve.
 
 ## O que ele faz
 
@@ -20,29 +20,8 @@ Plugin para o Claude Code que escolhe sozinho **qual modelo e qual esforço** us
    O Opus fica só para o que é de fato muito difícil: se o Sonnet em high dá conta, ele usa o Sonnet em high. **`xhigh` e `max` nunca são escolhidos sozinhos**: para usar, fixe à mão com `/orquestra fixar opus max` (ou qualquer modelo e esforço) e volte com `/orquestra auto`.
 
 2. **Troca o modelo da conversa automaticamente**, a cada turno, e mostra na linha de status quem está atendendo. Para não perder o cache do contexto, só desce de nível quando a queda é grande; subir é sempre na hora.
-3. **Em projeto grande, planeja antes de executar.** Quando o pedido é um escopo novo e grande (nota 7 ou 8), o planejador lê o projeto, quebra o trabalho em tarefas com dependências e arquivos previstos, e o recepcionista dá uma nota a cada tarefa. O plano aparece com o modelo de cada uma e **só executa depois do seu `/aprovar`**.
-4. **Executa em ondas, um subagente por tarefa.** Cada tarefa roda num agente novo, com contexto limpo, no modelo e esforço da nota dela. Tarefas independentes rodam juntas (se não mexem no mesmo arquivo); as que dependem de outra esperam e recebem o resultado dela. Se uma falha, as dependentes ficam bloqueadas.
-5. **Revisão final.** Quando as tarefas acabam, a sessão principal confere se as peças se encaixam e resume o que foi feito.
-6. **Compacta a conversa sozinho.** Quando o contexto passa de 65%, ele roda o equivalente a um `/compact` no fim do turno, pedindo para manter o plano, as decisões, os arquivos em edição e o que falta fazer. Faz isso uma vez por subida; se o próximo turno já tiver começado, tenta de novo no fim dele.
-7. **Painel ao vivo** (`/painel`) com o que cada agente está fazendo, custo, contexto e alertas.
 
-## Quanto ele pode economizar
-
-**É uma estimativa por média, não uma medição.** Não é a quantidade exata de tokens que você vai economizar. É uma ordem de grandeza do que costuma acontecer comparado a usar o Claude sem ele.
-
-| Situação | Custo a menos (estimado) |
-|---|---|
-| Sessão comum, com pedidos soltos | cerca de **30 a 45%** |
-| Projeto grande com plano e executores | cerca de **50 a 65%** |
-| Quem já usava o Sonnet quase sempre | cerca de **10 a 20%** |
-
-Como a estimativa foi feita:
-
-- Parte dos preços da API por milhão de tokens: Haiku 5.5 a $0,10 de entrada e $0,50 de saída, Sonnet 5.5 a $2 e $10, Opus 5.5 a $4 e $20. Ou seja, o Opus custa 2x o Sonnet e 40x o Haiku.
-- Supõe que, sem o mod, quase tudo rodaria no Opus, e que os pedidos se dividem em 15% triviais, 20% simples, 35% normais, 20% difíceis, 8% muito difíceis e 2% ultra.
-- **O número de tokens não cai por trocar de modelo.** O que cai é o custo, e nos planos de assinatura o consumo do seu limite de uso.
-- Desconta o que o próprio mod gasta: uma chamada barata de classificação por prompt e o cache que se perde ao trocar de modelo.
-- O resultado real depende dos seus pedidos. Se a nota sair baixa demais e você tiver que refazer, a economia some. Por isso o plano mostra o modelo de cada tarefa antes de executar, e o `/orquestra` mostra as últimas decisões com o motivo de cada uma.
+Enquanto a orquestra está ligada, ela substitui o modelo e o esforço escolhidos no app. Para voltar a valer o do app, use `/orquestra off`.
 
 ## Instalar
 
@@ -56,30 +35,11 @@ No app desktop: clique em **+** ao lado do campo de texto, depois **Plugins**, *
 
 ## Comandos
 
-- `/orquestra`: status, tabela de níveis, últimas decisões e o plano atual. Também aceita `on`, `off`, `1-8` (um nível só no próximo turno), `fixar <haiku|sonnet|opus> <low|medium|high|xhigh|max>` (trava modelo e esforço em todos os turnos, sem triagem), `auto` (volta ao automático), `plano on|off` e `compactar on|off|<10-95>` (liga, desliga ou muda o limite da compactação automática; o padrão é 65).
-- `/planejar <escopo>`: força o planejador, se o automático não pegar.
-- `/aprovar [sem 2 3] [4=6]`: aprova o plano; `sem` pula tarefas e `4=6` põe a tarefa 4 no nível 6 (de 1 a 8).
-- `/descartar`: descarta o plano (agentes já em andamento terminam, mas nada novo começa).
-- `/painel`: abre o painel ao vivo da sessão.
-
-## Painel ao vivo
-
-`/painel` abre um painel que se atualiza sozinho com o que acontece na sessão:
-
-| Bloco | O que mostra | De onde vem |
-|---|---|---|
-| Atendendo agora | Modelo do último turno, esforço e nota; custo; limite de uso; economia estimada | Uso real reportado pela API em cada turno e a leitura de uso da sessão |
-| Agentes | Uma linha por agente (a conversa principal e cada subagente): status, modelo, última ação (`Edit app.ts`, `Bash npm test`), quantas ferramentas usou e há quanto tempo roda; aviso se ficar mais de 10 min sem atividade | Cada início de subagente, chamada de ferramenta e fim de turno |
-| Janela de contexto | Barra de ocupação com a marca do limite de compactação | Leitura de uso da sessão |
-| Gasto por modelo | Barra empilhada e US$ por Haiku, Sonnet e Opus, com o número de turnos | Tokens de cada turno vezes a tabela de preços da API |
-| Turnos | Uma barra por turno (altura = tokens, cor = modelo; executores esmaecidos) e quantas vezes o modelo trocou | Uso de cada turno |
-| Plano | Tarefas, status e nível de cada uma | Estado do plano |
-| Ferramentas | As mais usadas, erros e arquivos editados | Cada chamada de ferramenta, de qualquer agente |
-| Alertas | Trocas de modelo em excesso, mesma ferramenta falhando, contexto acima de 60%, limite de uso acima de 80% | Regras simples sobre os números acima |
-
-Cada modelo também aparece por escrito, não só pela cor.
-
-**A economia é estimada.** Ela compara o custo real com o que custaria se os mesmos tokens tivessem rodado no Opus. Não conta que o esforço e a qualidade mudam a quantidade de tokens, e o custo do cache escrito é aproximado. Só aparece depois de 3 turnos. O painel não abre sozinho, e é o app que decide em que lugar da tela ele fica.
+- `/orquestra`: status, tabela de níveis e últimas decisões.
+- `/orquestra on` / `off`: liga ou desliga a triagem. Desligada, vale o modelo escolhido no app.
+- `/orquestra 1` a `8`: escolhe um nível só para o próximo turno. O prompt seguinte volta a passar pela triagem.
+- `/orquestra fixar <haiku|sonnet|opus> <low|medium|high|xhigh|max>`: trava modelo e esforço em todos os turnos, sem triagem. Sem esforço, usa `high`.
+- `/orquestra auto`: volta ao automático.
 
 ## Ajustes
 
@@ -88,6 +48,4 @@ A tabela `NIVEIS` no topo de `hooks/register.ts` define quem atende cada nível.
 ## Limitações conhecidas
 
 - Ainda não foi calibrado com uso real prolongado; a precisão da nota depende do pedido.
-- O mod só enxerga a resposta final de cada executor (cortada em 1500 caracteres), não os arquivos que ele editou.
-- Os preços do painel são os da tabela da API; numa assinatura o consumo do limite de uso não segue exatamente esses valores.
-- O painel, o bloco de agentes e a compactação automática foram testados com o kit de testes do Claude Code, mas ainda pouco em uso real. Se algo não aparecer, `/orquestra compactar off` e `/orquestra off` desligam as partes automáticas.
+- Cada prompt custa uma chamada barata de classificação ao Haiku, e trocar de modelo perde o cache do contexto.
