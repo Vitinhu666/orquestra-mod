@@ -79,7 +79,7 @@ async function atualizarStatus($: Ctx): Promise<void> {
   const fixo = await read($, fixoAtom)
   $.ui.status(
     !on
-      ? '🛎 Orquestra desligada'
+      ? '🛎 Orquestra OFF · modo manual: vale o que você escolher'
       : fixo
         ? `🛎 fixado: ${fixo.rotulo} · ${fixo.esforco}`
         : d
@@ -217,7 +217,16 @@ export const register: Register = on => {
   // Toda chamada do turno principal sai com o modelo e o esforço escolhidos;
   // subagentes ficam com o modelo deles.
   on('turn.step', async function* ($, e, next) {
-    if (e.agentId !== undefined || !(await read($, ligado))) return yield* next(e)
+    if (e.agentId !== undefined) return yield* next(e)
+
+    // Opus em xhigh ou max escolhido no app é uma decisão sua: a orquestra sai de cena.
+    if (e.model === 'claude-opus-5-5' && (e.effort === 'xhigh' || e.effort === 'max') && (await read($, ligado))) {
+      await update($, ligado, () => false)
+      await atualizarStatus($)
+      $.ui.toast(`🛎 Orquestra OFF: você escolheu Opus · ${e.effort}. Modo manual: vale o que você escolher no app. /orquestra on liga de novo.`)
+    }
+
+    if (!(await read($, ligado))) return yield* next(e)
     const fixo = await read($, fixoAtom)
     if (fixo) return yield* next({ ...e, model: fixo.modelo, effort: fixo.esforco })
     const d = await read($, atual)

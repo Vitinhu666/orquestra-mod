@@ -21,7 +21,11 @@ Plugin para o Claude Code que escolhe sozinho **qual modelo e qual esforço** us
 
 2. **Troca o modelo da conversa automaticamente**, a cada turno, e mostra na linha de status quem está atendendo. Para não perder o cache do contexto, só desce de nível quando a queda é grande; subir é sempre na hora.
 
-Enquanto a orquestra está ligada, ela substitui o modelo e o esforço escolhidos no app. Para voltar a valer o do app, use `/orquestra off`.
+## Escolha manual no app
+
+Enquanto a orquestra está **ligada**, ela ignora o modelo e o esforço que você escolhe no seletor do app (inclusive Haiku high ou Sonnet high): a nota da triagem decide. Para escolher você mesmo, use `/orquestra off`; a escolha do app volta a valer na hora.
+
+A única exceção é **Opus em xhigh ou max** escolhido no app. Nesse caso a orquestra desliga sozinha (aviso "Orquestra OFF" na tela e na linha de status) e o seu modelo é usado. O aviso aparece quando você envia a mensagem seguinte, não no clique do seletor, porque o plugin não recebe esse evento. Para ligar de novo, use `/orquestra on`.
 
 ## Instalar
 

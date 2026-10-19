@@ -114,3 +114,33 @@ test('/orquestra sem argumento mostra o status e um número solto não vira coma
   expect(r).toContain('Níveis:')
   expect(r).toContain('Uso: /orquestra on | off | fixar')
 })
+
+test('escolha do app em Opus xhigh/max desliga a orquestra e vale; abaixo disso a triagem troca a escolha', async ($, on) => {
+  const vistos: TurnStepInput[] = []
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+  on('model.complete', () => ({ value: { isAnswered: true, text: '{"nivel": 1, "motivo": "x"}', usage: USO } }))
+  on('turn.step', async function* ($, e) {
+    vistos.push(e)
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  const passo = async (model: string, effort: string) => {
+    const s = $.turn.step({ turnId: 't', index: 0, model, effort, messageCount: 1 } as Parameters<typeof $.turn.step>[0])
+    for await (const _ of s) void _
+    await s.result
+    return vistos[vistos.length - 1]!
+  }
+
+  // Com a triagem ligada, o app em Sonnet high é trocado pela nota.
+  await $.prompt.submit({ text: 'valeu' })
+  expect((await passo('claude-sonnet-5-5', 'high')).model).toBe('claude-haiku-5-5')
+
+  // Opus max no app: a orquestra desliga e o app manda.
+  const r = await passo('claude-opus-5-5', 'max')
+  expect(r.model).toBe('claude-opus-5-5')
+  expect(r.effort).toBe('max')
+  const status = JSON.stringify(await $.command.run({ command: 'orquestra', args: '' }))
+  expect(status).toContain('desligada')
+
+  // Depois de desligada, Haiku high no app continua valendo.
+  expect((await passo('claude-haiku-5-5', 'high')).effort).toBe('high')
+})
