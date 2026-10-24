@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decisao, Esforco } from '../types'
+import { comprimir } from './saida'
 
 type Ctx = EngineInterface
 
@@ -49,6 +50,12 @@ const ligado = atom({ plugin: 'orquestra', key: 'ligado' } as const, true)
 const atual = atom({ plugin: 'orquestra', key: 'atual' } as const, null)
 const historico = atom({ plugin: 'orquestra', key: 'historico' } as const, [])
 const fixoAtom = atom({ plugin: 'orquestra', key: 'fixo' } as const, null)
+const curtoAtom = atom({ plugin: 'orquestra', key: 'curto' } as const, true)
+const saidaAtom = atom({ plugin: 'orquestra', key: 'saida' } as const, true)
+
+const RESPOSTA_CURTA =
+  'Responda de forma direta e curta: vá ao ponto, sem introdução, sem repetir a pergunta, sem elogio e sem resumo do que acabou de fazer. ' +
+  'Mantenha exatos todo código, comando, caminho e número. Só explique mais se o usuário pedir.'
 
 function nivelValido(n: unknown): number {
   const v = Math.round(Number(n))
@@ -128,8 +135,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'orquestra',
-      description: 'Orquestra de modelos: status, ligar/desligar, fixar modelo e esforço',
-      argumentHint: '[on | off | fixar <modelo> <esforço> | auto]',
+      description: 'Orquestra de modelos: status, ligar/desligar, fixar modelo e esforço, respostas curtas, saída enxuta',
+      argumentHint: '[on | off | fixar <modelo> <esforço> | auto | curto on|off | saida on|off]',
     })
     await atualizarStatus($)
     return next(e)
@@ -146,6 +153,15 @@ export const register: Register = on => {
           ? 'Orquestra ligada: cada prompt vai escolher o modelo.'
           : 'Orquestra desligada: vale o modelo que você escolheu no app.',
       }
+    }
+
+    const economia = arg.match(/^(curto|saida) (on|off)$/)
+    if (economia) {
+      const [, quem, estado] = economia
+      if (quem === 'curto') await update($, curtoAtom, () => estado === 'on')
+      else await update($, saidaAtom, () => estado === 'on')
+      const nome = quem === 'curto' ? 'Respostas curtas' : 'Saída de terminal enxuta'
+      return { text: `${nome}: ${estado === 'on' ? 'ligadas' : 'desligadas'}.` }
     }
 
     // Fixar à mão: vale para todos os turnos até /orquestra auto. É o único jeito de usar xhigh e max.
@@ -182,13 +198,14 @@ export const register: Register = on => {
     return {
       text: [
         `Orquestra ${isLigado ? 'ligada' : 'desligada'}. ${fixo ? `FIXADA em ${fixo.rotulo} · ${fixo.esforco} (sem triagem; /orquestra auto volta ao automático).` : d ? `Agora: ${descrever(d)} (${d.motivo}).` : 'Nenhuma decisão ainda.'}`,
+        `Respostas curtas: ${(await read($, curtoAtom)) ? 'ligadas' : 'desligadas'} · Saída de terminal enxuta: ${(await read($, saidaAtom)) ? 'ligada' : 'desligada'}`,
         '',
         'Níveis:',
         tabela(),
         '',
         ultimas ? `Últimas decisões:\n${ultimas}\n` : '',
         'xhigh e max não entram no automático: use /orquestra fixar <haiku|sonnet|opus> <low|medium|high|xhigh|max>.',
-        'Uso: /orquestra on | off | fixar <modelo> <esforço> | auto',
+        'Uso: /orquestra on | off | fixar <modelo> <esforço> | auto | curto on|off | saida on|off',
       ].join('\n'),
     }
   })
@@ -212,6 +229,29 @@ export const register: Register = on => {
     }
 
     return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // Respostas curtas: uma instrução a mais no prompt de sistema.
+  on('prompt.compose', async ($, e, next) => {
+    const r = await next(e)
+    if (!(await read($, curtoAtom))) return r
+    return { sections: [...r.sections, { id: 'orquestra:curto', text: RESPOSTA_CURTA, scope: 'session' as const }] }
+  }).catch(($, e, next) => next(e))
+
+  // Saída de terminal enxuta: o modelo lê a versão comprimida do resultado do Bash.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const r = await next(e)
+    if (r.deny || !(await read($, saidaAtom))) return r
+    const res = r.result as { stdout?: unknown; stderr?: unknown } | undefined
+    if (!res) return r
+    const stdout = typeof res.stdout === 'string' ? comprimir(res.stdout) : res.stdout
+    const stderr = typeof res.stderr === 'string' ? comprimir(res.stderr) : res.stderr
+    if (stdout === res.stdout && stderr === res.stderr) return r
+    return {
+      result: { ...res, stdout, stderr },
+      ...(r.context ? { context: r.context } : {}),
+      ...(r.isError ? { isError: r.isError } : {}),
+    } as typeof r
   }).catch(($, e, next) => next(e))
 
   // Toda chamada do turno principal sai com o modelo e o esforço escolhidos;

@@ -18,6 +18,8 @@ declare module 'claude-code' {
       atual: Decisao | null
       historico: Decisao[]
       fixo: Fixo | null
+      curto: boolean
+      saida: boolean
     }
   }
 }

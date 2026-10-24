@@ -29,5 +29,7 @@ Com a orquestra ligada, o modelo do seletor do app é ignorado. A exceção é O
 - `/orquestra on` / `off`: liga ou desliga a triagem.
 - `/orquestra fixar <haiku|sonnet|opus> <low|medium|high|xhigh|max>`: trava modelo e esforço, sem triagem.
 - `/orquestra auto`: volta ao automático.
+- `/orquestra curto on` / `off`: respostas curtas e diretas, sem introdução nem resumo. Ligado por padrão.
+- `/orquestra saida on` / `off`: comprime a saída dos comandos do Bash antes de o modelo ler (tira cores e barras de progresso, junta linhas repetidas e, se passar de 150 linhas ou 10 mil caracteres, guarda só o começo e o fim). Ligado por padrão.
 
 A tabela `NIVEIS` no topo de `hooks/register.ts` define quem atende cada nível.
